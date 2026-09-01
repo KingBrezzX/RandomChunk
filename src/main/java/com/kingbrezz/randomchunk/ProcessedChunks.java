@@ -13,29 +13,52 @@ import java.util.Set;
 public final class ProcessedChunks {
 
     private final RandomChunkPlugin plugin;
-    private final Set<String> processed = new HashSet<>();
+    private final Set<String> processed =
+            new HashSet<>();
 
     private File file;
     private FileConfiguration data;
 
-    public ProcessedChunks(RandomChunkPlugin plugin) {
+    public ProcessedChunks(
+            RandomChunkPlugin plugin
+    ) {
         this.plugin = plugin;
         load();
     }
 
-    private String key(World world, int x, int z) {
-        return world.getUID() + ":" + x + ":" + z;
+    private String key(
+            World world,
+            int x,
+            int z
+    ) {
+        return world.getUID()
+                + ":"
+                + x
+                + ":"
+                + z;
     }
 
     public boolean contains(Chunk chunk) {
-        return processed.contains(
-                key(chunk.getWorld(), chunk.getX(), chunk.getZ())
+        return containsKey(
+                key(
+                        chunk.getWorld(),
+                        chunk.getX(),
+                        chunk.getZ()
+                )
         );
+    }
+
+    public boolean containsKey(String key) {
+        return processed.contains(key);
     }
 
     public void add(Chunk chunk) {
         processed.add(
-                key(chunk.getWorld(), chunk.getX(), chunk.getZ())
+                key(
+                        chunk.getWorld(),
+                        chunk.getX(),
+                        chunk.getZ()
+                )
         );
     }
 
@@ -49,14 +72,22 @@ public final class ProcessedChunks {
     }
 
     public void load() {
-        file = new File(plugin.getDataFolder(), "processed-chunks.yml");
+        file = new File(
+                plugin.getDataFolder(),
+                "processed-chunks.yml"
+        );
 
         if (!file.exists()) {
             try {
-                if (file.getParentFile() != null) {
-                    file.getParentFile().mkdirs();
+                File parent =
+                        file.getParentFile();
+
+                if (parent != null) {
+                    parent.mkdirs();
                 }
+
                 file.createNewFile();
+
             } catch (IOException e) {
                 plugin.getLogger().severe(
                         "Could not create processed-chunks.yml: "
@@ -65,23 +96,38 @@ public final class ProcessedChunks {
             }
         }
 
-        data = YamlConfiguration.loadConfiguration(file);
+        data =
+                YamlConfiguration.loadConfiguration(
+                        file
+                );
 
         processed.clear();
+
         processed.addAll(
                 data.getStringList("chunks")
         );
     }
 
     public void save() {
-        if (data == null) {
-            data = YamlConfiguration.loadConfiguration(file);
+        if (file == null) {
+            return;
         }
 
-        data.set("chunks", processed);
+        if (data == null) {
+            data =
+                    YamlConfiguration.loadConfiguration(
+                            file
+                    );
+        }
+
+        data.set(
+                "chunks",
+                processed
+        );
 
         try {
             data.save(file);
+
         } catch (IOException e) {
             plugin.getLogger().severe(
                     "Could not save processed-chunks.yml: "
