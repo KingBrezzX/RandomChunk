@@ -1,19 +1,21 @@
 package com.kingbrezz.randomchunk;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -25,32 +27,36 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 
-public final class RandomChunkPlugin extends JavaPlugin implements Listener {
-
-    private Language language;
-    private ProcessedChunks processedChunks;
-
-    private final Queue<ChunkTask> queue = new ArrayDeque<>();
-    private final Set<String> queued = new HashSet<>();
-    private final Set<String> active = new HashSet<>();
-
-    private final Map<String, Long> lastChunkByPlayer = new HashMap<>();
+public final class RandomChunkPlugin extends JavaPlugin implements Listener, TabExecutor {
 
     private final Random random = new Random();
 
-    private List<Material> randomMaterials = new ArrayList<>();
+    private final Queue<ChunkTask> queue = new ArrayDeque<>();
+    private final Set<String> queuedChunks = new HashSet<>();
+    private final Map<UUID, String> lastChunkByPlayer = new HashMap<>();
+
+    private final List<Material> randomMaterials = new ArrayList<>();
+
+    private ProcessedChunks processedChunks;
+    private Language language;
+
+    private BukkitTask processingTask;
 
     private boolean running;
+    private int activeChunks;
 
-    private int blocksPerTick;
-    private int slowBlocksPerTick;
-    private boolean adaptiveTps;
-    private double minimumTps;
     private boolean replaceAir;
     private boolean replaceBedrock;
     private boolean applyPhysics;
-    private boolean persistent;
+
+    private int blocksPerTick;
+    private int slowModeBlocksPerTick;
+    private int maxActiveChunks;
+
+    private boolean adaptiveTps;
+    private double minimumTps;
 
     @Override
     public void onEnable() {
@@ -62,60 +68,55 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
         loadSettings();
         rebuildMaterialList();
 
-        Bukkit.getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(this, this);
+
+        if (getCommand("randomchunk") != null) {
+            getCommand("randomchunk").setExecutor(this);
+            getCommand("randomchunk").setTabCompleter(this);
+        }
+
+        running = getConfig().getBoolean("settings.enabled-on-start", false);
+
+        startProcessingTask();
 
         getLogger().info("RandomChunk enabled.");
-        getLogger().info("Author: KingBrezz");
-        getLogger().info("Available random blocks: " + randomMaterials.size());
+        getLogger().info("Random block pool: " + randomMaterials.size());
 
-        Bukkit.getScheduler().runTaskTimer(
-                this,
-                this::processQueue,
-                1L,
-                1L
-        );
+        if (running) {
+            getLogger().info("RandomChunk event is running.");
+        }
     }
 
     @Override
     public void onDisable() {
-        if (persistent && processedChunks != null) {
+        if (processingTask != null) {
+            processingTask.cancel();
+            processingTask = null;
+        }
+
+        if (processedChunks != null) {
             processedChunks.save();
         }
 
         queue.clear();
-        queued.clear();
-        active.clear();
+        queuedChunks.clear();
+        lastChunkByPlayer.clear();
 
         getLogger().info("RandomChunk disabled.");
     }
 
+    @EventHandler
+    public void onPluginDisable(PluginDisableEvent event) {
+        if (event.getPlugin() != this) {
+            return;
+        }
+
+        if (processingTask != null) {
+            processingTask.cancel();
+        }
+    }
+
     private void loadSettings() {
-        blocksPerTick = Math.max(
-                1,
-                getConfig().getInt(
-                        "settings.blocks-per-tick",
-                        2048
-                )
-        );
-
-        slowBlocksPerTick = Math.max(
-                1,
-                getConfig().getInt(
-                        "performance.slow-mode-blocks-per-tick",
-                        256
-                )
-        );
-
-        adaptiveTps = getConfig().getBoolean(
-                "performance.adaptive-tps",
-                true
-        );
-
-        minimumTps = getConfig().getDouble(
-                "performance.minimum-tps",
-                18.0
-        );
-
         replaceAir = getConfig().getBoolean(
                 "settings.replace-air",
                 false
@@ -131,14 +132,38 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
                 false
         );
 
-        persistent = getConfig().getBoolean(
-                "storage.persistent",
+        blocksPerTick = Math.max(
+                1,
+                getConfig().getInt(
+                        "settings.blocks-per-tick",
+                        2048
+                )
+        );
+
+        slowModeBlocksPerTick = Math.max(
+                1,
+                getConfig().getInt(
+                        "performance.slow-mode-blocks-per-tick",
+                        256
+                )
+        );
+
+        maxActiveChunks = Math.max(
+                1,
+                getConfig().getInt(
+                        "settings.max-active-chunks",
+                        1
+                )
+        );
+
+        adaptiveTps = getConfig().getBoolean(
+                "performance.adaptive-tps",
                 true
         );
 
-        running = getConfig().getBoolean(
-                "settings.enabled-on-start",
-                false
+        minimumTps = getConfig().getDouble(
+                "performance.minimum-tps",
+                18.0
         );
     }
 
@@ -157,198 +182,176 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
             randomMaterials.add(material);
         }
 
-        Collections.shuffle(randomMaterials);
+        Collections.shuffle(randomMaterials, random);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMove(PlayerMoveEvent event) {
-        if (!running) {
-            return;
+    private void startProcessingTask() {
+        if (processingTask != null) {
+            processingTask.cancel();
         }
 
-        if (event.getTo() == null) {
-            return;
-        }
-
-        int oldChunkX = event.getFrom().getBlockX() >> 4;
-        int oldChunkZ = event.getFrom().getBlockZ() >> 4;
-
-        int newChunkX = event.getTo().getBlockX() >> 4;
-        int newChunkZ = event.getTo().getBlockZ() >> 4;
-
-        if (oldChunkX == newChunkX && oldChunkZ == newChunkZ) {
-            return;
-        }
-
-        enqueue(
-                event.getPlayer().getWorld(),
-                newChunkX,
-                newChunkZ
-        );
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onWorldChange(PlayerChangedWorldEvent event) {
-        if (!running) {
-            return;
-        }
-
-        Player player = event.getPlayer();
-
-        enqueue(
-                player.getWorld(),
-                player.getChunk().getX(),
-                player.getChunk().getZ()
-        );
-    }
-
-    private void enqueue(World world, int chunkX, int chunkZ) {
-        if (!isWorldEnabled(world)) {
-            return;
-        }
-
-        if (randomMaterials.isEmpty()) {
-            return;
-        }
-
-        String key = world.getUID() + ":" + chunkX + ":" + chunkZ;
-
-        if (processedChunks.contains(
-                world.getChunkAt(chunkX, chunkZ)
-        )) {
-            return;
-        }
-
-        if (queued.contains(key) || active.contains(key)) {
-            return;
-        }
-
-        queued.add(key);
-
-        queue.add(
-                new ChunkTask(
-                        world,
-                        chunkX,
-                        chunkZ,
-                        key,
-                        chooseMaterial()
-                )
-        );
-    }
-
-    private Material chooseMaterial() {
-        return randomMaterials.get(
-                random.nextInt(randomMaterials.size())
+        processingTask = Bukkit.getScheduler().runTaskTimer(
+                this,
+                this::processQueue,
+                1L,
+                1L
         );
     }
 
     private void processQueue() {
-        if (!running || queue.isEmpty()) {
+        if (!running) {
             return;
         }
 
-        if (randomMaterials.isEmpty()) {
+        if (queue.isEmpty()) {
             return;
         }
 
-        ChunkTask task = queue.peek();
+        int availableSlots = maxActiveChunks - activeChunks;
 
-        if (!task.world.isChunkLoaded(
-                task.chunkX,
-                task.chunkZ
-        )) {
-            queue.poll();
-            queued.remove(task.key);
+        if (availableSlots <= 0) {
             return;
         }
 
-        active.add(task.key);
+        while (availableSlots > 0 && !queue.isEmpty()) {
+            ChunkTask task = queue.peek();
 
-        int budget = blocksPerTick;
-
-        if (adaptiveTps) {
-            double tps = getServerTps();
-
-            if (tps < minimumTps) {
-                budget = slowBlocksPerTick;
+            if (task == null) {
+                return;
             }
+
+            if (!task.world.isChunkLoaded(task.chunkX, task.chunkZ)) {
+                return;
+            }
+
+            activeChunks++;
+
+            int budget = getCurrentBlocksPerTick();
+
+            boolean complete = processBlocks(task, budget);
+
+            if (complete) {
+                queue.poll();
+
+                queuedChunks.remove(task.key);
+
+                activeChunks = Math.max(
+                        0,
+                        activeChunks - 1
+                );
+
+                Chunk chunk = task.world.getChunkAt(
+                        task.chunkX,
+                        task.chunkZ
+                );
+
+                processedChunks.add(chunk);
+                processedChunks.save();
+
+                Map<String, String> placeholders = new HashMap<>();
+                placeholders.put(
+                        "chunk_x",
+                        Integer.toString(task.chunkX)
+                );
+                placeholders.put(
+                        "chunk_z",
+                        Integer.toString(task.chunkZ)
+                );
+                placeholders.put(
+                        "block",
+                        task.material.name()
+                );
+
+                getLogger().info(
+                        "Chunk " +
+                                task.chunkX +
+                                "," +
+                                task.chunkZ +
+                                " in " +
+                                task.world.getName() +
+                                " became " +
+                                task.material.name()
+                );
+            } else {
+                activeChunks = Math.max(
+                        0,
+                        activeChunks - 1
+                );
+
+                return;
+            }
+
+            availableSlots--;
+        }
+    }
+
+    private int getCurrentBlocksPerTick() {
+        if (!adaptiveTps) {
+            return blocksPerTick;
         }
 
-        boolean finished = processBlocks(
-                task,
-                budget
-        );
+        double[] tps = Bukkit.getTPS();
 
-        if (!finished) {
-            return;
+        if (tps.length == 0) {
+            return blocksPerTick;
         }
 
-        queue.poll();
-        queued.remove(task.key);
-        active.remove(task.key);
+        double currentTps = tps[0];
 
-        Chunk chunk = task.world.getChunkAt(
-                task.chunkX,
-                task.chunkZ
-        );
-
-        processedChunks.add(chunk);
-
-        if (persistent) {
-            processedChunks.save();
+        if (currentTps < minimumTps) {
+            return slowModeBlocksPerTick;
         }
 
-        getLogger().info(
-                "Processed chunk "
-                        + task.world.getName()
-                        + " "
-                        + task.chunkX
-                        + ","
-                        + task.chunkZ
-                        + " -> "
-                        + task.material.name()
-        );
+        return blocksPerTick;
     }
 
     private boolean processBlocks(
             ChunkTask task,
             int budget
     ) {
-        World world = task.world;
-
-        int minY = world.getMinHeight();
-        int maxY = world.getMaxHeight();
-
         int processed = 0;
 
-        while (
-                task.y < maxY
-                        && processed < budget
-        ) {
-            while (
-                    task.y < maxY
-                            && processed < budget
-            ) {
-                Block block = world.getBlockAt(
-                        task.x,
-                        task.y,
-                        task.z
+        int minY = task.world.getMinHeight();
+        int maxY = task.world.getMaxHeight();
+
+        while (processed < budget) {
+
+            if (task.y >= maxY) {
+                return true;
+            }
+
+            int worldX = task.chunkX * 16 + task.localX;
+            int worldZ = task.chunkZ * 16 + task.localZ;
+
+            Block block = task.world.getBlockAt(
+                    worldX,
+                    task.y,
+                    worldZ
+            );
+
+            if (shouldReplace(block)) {
+                block.setType(
+                        task.material,
+                        applyPhysics
                 );
+            }
 
-                if (shouldReplace(block)) {
-                    block.setType(
-                            task.material,
-                            applyPhysics
-                    );
+            processed++;
+
+            task.localX++;
+
+            if (task.localX >= 16) {
+                task.localX = 0;
+                task.localZ++;
+
+                if (task.localZ >= 16) {
+                    task.localZ = 0;
+                    task.y++;
                 }
-
-                processed++;
-
-                advance(task);
             }
         }
 
-        return task.y >= maxY;
+        return false;
     }
 
     private boolean shouldReplace(Block block) {
@@ -358,105 +361,349 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
             return replaceAir;
         }
 
-        if (
-                type == Material.BEDROCK
-                        && !replaceBedrock
-        ) {
+        if (type == Material.BEDROCK && !replaceBedrock) {
             return false;
         }
 
         return true;
     }
 
-    private void advance(ChunkTask task) {
-        task.x++;
-
-        if (task.x >= task.maxX) {
-            task.x = task.minX;
-            task.z++;
-
-            if (task.z >= task.maxZ) {
-                task.z = task.minZ;
-                task.y++;
-            }
-        }
-    }
-
     private boolean isWorldEnabled(World world) {
-        List<String> enabled = getConfig().getStringList(
-                "worlds.enabled"
-        );
+        List<String> enabledWorlds =
+                getConfig().getStringList("worlds.enabled");
 
-        if (enabled.isEmpty()) {
+        if (enabledWorlds.isEmpty()) {
             return true;
         }
 
-        return enabled.contains(world.getName());
+        return enabledWorlds.contains(world.getName());
     }
 
-    private double getServerTps() {
-        try {
-            double[] tps = Bukkit.getTPS();
-
-            if (tps.length == 0) {
-                return 20.0;
-            }
-
-            return tps[0];
-        } catch (Throwable ignored) {
-            return 20.0;
+    private void handleChunkChange(
+            Player player,
+            int chunkX,
+            int chunkZ
+    ) {
+        if (!running) {
+            return;
         }
+
+        World world = player.getWorld();
+
+        if (!isWorldEnabled(world)) {
+            return;
+        }
+
+        String playerKey =
+                world.getUID() +
+                        ":" +
+                        chunkX +
+                        ":" +
+                        chunkZ;
+
+        String previous =
+                lastChunkByPlayer.put(
+                        player.getUniqueId(),
+                        playerKey
+                );
+
+        if (playerKey.equals(previous)) {
+            return;
+        }
+
+        Chunk chunk = world.getChunkAt(
+                chunkX,
+                chunkZ
+        );
+
+        if (processedChunks.contains(chunk)) {
+            return;
+        }
+
+        enqueueChunk(world, chunkX, chunkZ);
     }
 
-    public void startEvent() {
+    private void enqueueChunk(
+            World world,
+            int chunkX,
+            int chunkZ
+    ) {
+        String key =
+                world.getUID() +
+                        ":" +
+                        chunkX +
+                        ":" +
+                        chunkZ;
+
+        if (queuedChunks.contains(key)) {
+            return;
+        }
+
+        Chunk chunk = world.getChunkAt(
+                chunkX,
+                chunkZ
+        );
+
+        if (processedChunks.contains(chunk)) {
+            return;
+        }
+
+        if (randomMaterials.isEmpty()) {
+            rebuildMaterialList();
+        }
+
+        if (randomMaterials.isEmpty()) {
+            getLogger().severe(
+                    "No valid Minecraft blocks are available."
+            );
+            return;
+        }
+
+        Material material =
+                randomMaterials.get(
+                        random.nextInt(
+                                randomMaterials.size()
+                        )
+                );
+
+        ChunkTask task = new ChunkTask(
+                world,
+                chunkX,
+                chunkZ,
+                material,
+                world.getMinHeight()
+        );
+
+        queue.add(task);
+        queuedChunks.add(key);
+    }
+
+    @EventHandler
+    public void onPlayerMove(PlayerMoveEvent event) {
+        if (!running) {
+            return;
+        }
+
+        if (event.getTo() == null) {
+            return;
+        }
+
+        if (event.getFrom().getWorld() == null) {
+            return;
+        }
+
+        if (event.getTo().getWorld() == null) {
+            return;
+        }
+
+        if (
+                event.getFrom().getBlockX() ==
+                        event.getTo().getBlockX()
+                        &&
+                        event.getFrom().getBlockZ() ==
+                                event.getTo().getBlockZ()
+        ) {
+            return;
+        }
+
+        int oldChunkX =
+                event.getFrom().getBlockX() >> 4;
+
+        int oldChunkZ =
+                event.getFrom().getBlockZ() >> 4;
+
+        int newChunkX =
+                event.getTo().getBlockX() >> 4;
+
+        int newChunkZ =
+                event.getTo().getBlockZ() >> 4;
+
+        if (
+                oldChunkX == newChunkX
+                        &&
+                        oldChunkZ == newChunkZ
+        ) {
+            return;
+        }
+
+        handleChunkChange(
+                event.getPlayer(),
+                newChunkX,
+                newChunkZ
+        );
+    }
+
+    @EventHandler
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        if (!running) {
+            return;
+        }
+
+        Player player = event.getPlayer();
+
+        lastChunkByPlayer.remove(
+                player.getUniqueId()
+        );
+
+        int chunkX =
+                player.getLocation()
+                        .getBlockX() >> 4;
+
+        int chunkZ =
+                player.getLocation()
+                        .getBlockZ() >> 4;
+
+        handleChunkChange(
+                player,
+                chunkX,
+                chunkZ
+        );
+    }
+
+    private void startEvent(CommandSender sender) {
+        if (running) {
+            sender.sendMessage(
+                    language.get(
+                            "event.already-started"
+                    )
+            );
+            return;
+        }
+
         running = true;
-        getConfig().set("settings.enabled-on-start", true);
+
+        getConfig().set(
+                "settings.enabled-on-start",
+                true
+        );
+
         saveConfig();
+
+        sender.sendMessage(
+                language.get(
+                        "event.started"
+                )
+        );
     }
 
-    public void stopEvent() {
+    private void stopEvent(CommandSender sender) {
+        if (!running) {
+            sender.sendMessage(
+                    language.get(
+                            "event.already-stopped"
+                    )
+            );
+            return;
+        }
+
         running = false;
-        getConfig().set("settings.enabled-on-start", false);
+
+        getConfig().set(
+                "settings.enabled-on-start",
+                false
+        );
+
         saveConfig();
 
-        queue.clear();
-        queued.clear();
-        active.clear();
+        sender.sendMessage(
+                language.get(
+                        "event.stopped"
+                )
+        );
     }
 
-    public void resetEvent() {
+    private void resetEvent(CommandSender sender) {
         queue.clear();
-        queued.clear();
-        active.clear();
+        queuedChunks.clear();
+        lastChunkByPlayer.clear();
+
+        activeChunks = 0;
+
+        sender.sendMessage(
+                language.get(
+                        "reset.started"
+                )
+        );
 
         processedChunks.reset();
+
+        sender.sendMessage(
+                language.get(
+                        "reset.completed"
+                )
+        );
     }
 
-    public void reloadPlugin() {
+    private void reloadPlugin(CommandSender sender) {
         reloadConfig();
-        language.reload();
+
         loadSettings();
+
         rebuildMaterialList();
+
+        language.reload();
+
+        sender.sendMessage(
+                language.get(
+                        "general.reloaded"
+                )
+        );
     }
 
-    public Language getLanguage() {
-        return language;
-    }
+    private void sendStatus(CommandSender sender) {
+        sender.sendMessage(
+                language.get(
+                        "status.header"
+                )
+        );
 
-    public boolean isRunning() {
-        return running;
-    }
+        sender.sendMessage(
+                language.get(
+                        "status.running"
+                ).replace(
+                        "{running}",
+                        Boolean.toString(running)
+                )
+        );
 
-    public int getQueueSize() {
-        return queue.size();
-    }
+        sender.sendMessage(
+                language.get(
+                        "status.processed"
+                ).replace(
+                        "{processed}",
+                        Integer.toString(
+                                processedChunks.size()
+                        )
+                )
+        );
 
-    public int getActiveSize() {
-        return active.size();
-    }
+        sender.sendMessage(
+                language.get(
+                        "status.queued"
+                ).replace(
+                        "{queued}",
+                        Integer.toString(
+                                queue.size()
+                        )
+                )
+        );
 
-    public int getProcessedSize() {
-        return processedChunks.size();
+        sender.sendMessage(
+                language.get(
+                        "status.active"
+                ).replace(
+                        "{active}",
+                        Integer.toString(
+                                activeChunks
+                        )
+                )
+        );
+
+        sender.sendMessage(
+                language.get(
+                        "status.header-end"
+                )
+        );
     }
 
     @Override
@@ -466,144 +713,94 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
             String label,
             String[] args
     ) {
-        if (!sender.hasPermission("randomchunk.admin")) {
+        if (
+                !sender.hasPermission(
+                        "randomchunk.admin"
+                )
+        ) {
             sender.sendMessage(
-                    language.get("general.no-permission")
+                    language.get(
+                            "general.no-permission"
+                    )
             );
             return true;
         }
 
         if (args.length == 0) {
-            sender.sendMessage(
-                    language.get("general.unknown-command")
-            );
+            sendStatus(sender);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
+        String subCommand =
+                args[0].toLowerCase();
 
-            case "start" -> {
-                if (running) {
-                    sender.sendMessage(
-                            language.get(
-                                    "event.already-started"
-                            )
-                    );
-                    return true;
-                }
+        switch (subCommand) {
 
-                startEvent();
+            case "start":
+                startEvent(sender);
+                break;
 
+            case "stop":
+                stopEvent(sender);
+                break;
+
+            case "reset":
+                resetEvent(sender);
+                break;
+
+            case "reload":
+                reloadPlugin(sender);
+                break;
+
+            case "status":
+                sendStatus(sender);
+                break;
+
+            default:
                 sender.sendMessage(
                         language.get(
-                                "event.started"
+                                "general.unknown-command"
                         )
                 );
-            }
-
-            case "stop" -> {
-                if (!running) {
-                    sender.sendMessage(
-                            language.get(
-                                    "event.already-stopped"
-                            )
-                    );
-                    return true;
-                }
-
-                stopEvent();
-
-                sender.sendMessage(
-                        language.get(
-                                "event.stopped"
-                        )
-                );
-            }
-
-            case "reset" -> {
-                resetEvent();
-
-                sender.sendMessage(
-                        language.get(
-                                "reset.completed"
-                        )
-                );
-            }
-
-            case "reload" -> {
-                reloadPlugin();
-
-                sender.sendMessage(
-                        language.get(
-                                "general.reloaded"
-                        )
-                );
-            }
-
-            case "status" -> {
-                sender.sendMessage(
-                        language.color(
-                                "&8&m----------&r &bRandomChunk &8&m----------"
-                        )
-                );
-
-                sender.sendMessage(
-                        language.get(
-                                "status.running"
-                        ).replace(
-                                "{running}",
-                                running ? "true" : "false"
-                        )
-                );
-
-                sender.sendMessage(
-                        language.get(
-                                "status.processed"
-                        ).replace(
-                                "{processed}",
-                                String.valueOf(
-                                        getProcessedSize()
-                                )
-                        )
-                );
-
-                sender.sendMessage(
-                        language.get(
-                                "status.queued"
-                        ).replace(
-                                "{queued}",
-                                String.valueOf(
-                                        getQueueSize()
-                                )
-                        )
-                );
-
-                sender.sendMessage(
-                        language.get(
-                                "status.active"
-                        ).replace(
-                                "{active}",
-                                String.valueOf(
-                                        getActiveSize()
-                                )
-                        )
-                );
-
-                sender.sendMessage(
-                        language.get(
-                                "status.header-end"
-                        )
-                );
-            }
-
-            default -> sender.sendMessage(
-                    language.get(
-                            "general.unknown-command"
-                    )
-            );
+                break;
         }
 
         return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(
+            CommandSender sender,
+            Command command,
+            String alias,
+            String[] args
+    ) {
+        if (args.length == 1) {
+            List<String> options =
+                    List.of(
+                            "start",
+                            "stop",
+                            "reset",
+                            "reload",
+                            "status"
+                    );
+
+            String input =
+                    args[0].toLowerCase();
+
+            List<String> result =
+                    new ArrayList<>();
+
+            for (String option : options) {
+                if (option.startsWith(input)) {
+                    result.add(option);
+                }
+            }
+
+            return result;
+        }
+
+        return Collections.emptyList();
     }
 
     private static final class ChunkTask {
@@ -611,40 +808,32 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener {
         private final World world;
         private final int chunkX;
         private final int chunkZ;
-        private final String key;
         private final Material material;
+        private final String key;
 
-        private final int minX;
-        private final int maxX;
-        private final int minZ;
-        private final int maxZ;
-
-        private int x;
+        private int localX;
+        private int localZ;
         private int y;
-        private int z;
 
         private ChunkTask(
                 World world,
                 int chunkX,
                 int chunkZ,
-                String key,
-                Material material
+                Material material,
+                int minY
         ) {
             this.world = world;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
-            this.key = key;
             this.material = material;
+            this.y = minY;
 
-            this.minX = chunkX << 4;
-            this.maxX = minX + 16;
-
-            this.minZ = chunkZ << 4;
-            this.maxZ = minZ + 16;
-
-            this.x = minX;
-            this.y = world.getMinHeight();
-            this.z = minZ;
+            this.key =
+                    world.getUID() +
+                            ":" +
+                            chunkX +
+                            ":" +
+                            chunkZ;
         }
     }
-          }
+            }
