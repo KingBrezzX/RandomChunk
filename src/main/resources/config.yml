@@ -1,0 +1,79 @@
+# ============================================================
+# RandomChunk
+# Author: KingBrezz
+# ============================================================
+
+language: en
+
+settings:
+
+  # RandomChunk tidak langsung aktif ketika server menyala.
+  enabled-on-start: false
+
+  # Setiap chunk hanya diproses satu kali.
+  # Gunakan /randomchunk reset untuk mengulang event.
+  process-once: true
+
+  # AIR TETAP AIR.
+  # Ini membuat bentuk terrain, cave, ravine, dan lubang tetap terlihat.
+  replace-air: false
+
+  # BEDROCK ikut diganti.
+  replace-bedrock: true
+
+  # Jangan jalankan physics ketika block diganti.
+  apply-physics: false
+
+  # 1 chunk menggunakan SATU material random.
+  # Material dipilih otomatis dari seluruh block Minecraft.
+  random-material-source: ALL_BLOCKS
+
+  # Jumlah block yang diproses setiap tick.
+  # Naikkan jika server kuat, turunkan jika TPS turun.
+  blocks-per-tick: 2048
+
+  # Hanya satu chunk yang diproses bersamaan.
+  max-active-chunks: 1
+
+
+performance:
+
+  # Memperlambat processing jika TPS server turun.
+  adaptive-tps: true
+
+  # Di bawah TPS ini plugin menggunakan slow-mode.
+  minimum-tps: 18.0
+
+  # Kecepatan processing ketika server sedang sibuk.
+  slow-mode-blocks-per-tick: 256
+
+
+worlds:
+
+  # Kosong = semua world.
+  #
+  # Contoh jika ingin membatasi:
+  # enabled:
+  #   - world
+  #   - world_nether
+  #   - world_the_end
+  #
+  enabled: []
+
+
+storage:
+
+  # Menyimpan chunk yang sudah pernah diproses.
+  # Setelah restart server chunk tidak di-random ulang.
+  persistent: true
+
+
+random-material:
+
+  # ALL_BLOCKS:
+  # Plugin otomatis mengambil semua Material yang merupakan block
+  # dan tersedia pada server Minecraft tersebut.
+  #
+  # Air tidak dipilih sebagai material random.
+  # Block baru Minecraft otomatis ikut tanpa edit config.
+  source: ALL_BLOCKS
