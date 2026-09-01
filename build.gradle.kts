@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.kingbrezz"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -20,7 +20,9 @@ dependencies {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(25))
+        languageVersion.set(
+            JavaLanguageVersion.of(25)
+        )
     }
 }
 
