@@ -1,0 +1,36 @@
+prefix: "&8[&bRandomChunk&8] "
+
+general:
+  no-permission: "&cYou don't have permission to use this command."
+  player-only: "&cThis command can only be used by a player."
+  unknown-command: "&cUnknown command. Use &f/randomchunk start&c, &fstop&c or &freset&c."
+  reloaded: "&aConfiguration reloaded."
+
+event:
+  started: "&aRandomChunk event started."
+  already-started: "&eRandomChunk is already running."
+  stopped: "&cRandomChunk event stopped."
+  already-stopped: "&eRandomChunk is already stopped."
+
+reset:
+  started: "&eResetting processed chunk data..."
+  completed: "&aProcessed chunk data has been reset."
+
+chunk:
+  queued: "&7Chunk &f{chunk_x}, {chunk_z}&7 has been queued."
+  processing: "&7Transforming chunk &f{chunk_x}, {chunk_z}&7..."
+  completed: "&aChunk &f{chunk_x}, {chunk_z}&a became &b{block}&a."
+  skipped: "&7Chunk &f{chunk_x}, {chunk_z}&7 was already processed."
+
+status:
+  header: "&8&m----------&r &bRandomChunk &8&m----------"
+  running: "&7Running: &a{running}"
+  processed: "&7Processed chunks: &f{processed}"
+  queued: "&7Queued chunks: &f{queued}"
+  active: "&7Active chunks: &f{active}"
+  header-end: "&8&m--------------------------------"
+
+errors:
+  no-blocks: "&cNo valid random blocks are configured."
+  world-disabled: "&cRandomChunk is disabled in this world."
+  processing: "&cThis chunk could not be processed."
