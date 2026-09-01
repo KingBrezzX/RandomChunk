@@ -1,36 +1,167 @@
-prefix: "&8[&bRandomChunk&8] "
+en:
+  prefix: "&8[&bRandomChunk&8] "
 
-general:
-  no-permission: "&cYou don't have permission to use this command."
-  player-only: "&cThis command can only be used by a player."
-  unknown-command: "&cUnknown command. Use &f/randomchunk start&c, &fstop&c or &freset&c."
-  reloaded: "&aConfiguration reloaded."
+  general:
+    no-permission: "&cYou don't have permission."
+    unknown-command: "&cUse: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
 
-event:
-  started: "&aRandomChunk event started."
-  already-started: "&eRandomChunk is already running."
-  stopped: "&cRandomChunk event stopped."
-  already-stopped: "&eRandomChunk is already stopped."
+  event:
+    started: "&aRandomChunk started."
+    already-started: "&eRandomChunk is already running."
+    stopped: "&cRandomChunk stopped."
+    already-stopped: "&eRandomChunk is already stopped."
 
-reset:
-  started: "&eResetting processed chunk data..."
-  completed: "&aProcessed chunk data has been reset."
+  reset:
+    started: "&eResetting processed chunk data..."
+    completed: "&aProcessed chunk data has been reset."
 
-chunk:
-  queued: "&7Chunk &f{chunk_x}, {chunk_z}&7 has been queued."
-  processing: "&7Transforming chunk &f{chunk_x}, {chunk_z}&7..."
-  completed: "&aChunk &f{chunk_x}, {chunk_z}&a became &b{block}&a."
-  skipped: "&7Chunk &f{chunk_x}, {chunk_z}&7 was already processed."
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7Running: &f{running}"
+    speed: "&7Speed: &b{speed}"
+    processed: "&7Processed chunks: &f{processed}"
+    queued: "&7Queued chunks: &f{queued}"
+    header-end: "&8&m--------------------------------"
 
-status:
-  header: "&8&m----------&r &bRandomChunk &8&m----------"
-  running: "&7Running: &a{running}"
-  processed: "&7Processed chunks: &f{processed}"
-  queued: "&7Queued chunks: &f{queued}"
-  active: "&7Active chunks: &f{active}"
-  header-end: "&8&m--------------------------------"
+  general2:
+    reloaded: "&aConfiguration reloaded."
 
-errors:
-  no-blocks: "&cNo valid random blocks are configured."
-  world-disabled: "&cRandomChunk is disabled in this world."
-  processing: "&cThis chunk could not be processed."
+id:
+  prefix: "&8[&bRandomChunk&8] "
+
+  general:
+    no-permission: "&cKamu tidak memiliki izin."
+    unknown-command: "&cGunakan: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
+
+  event:
+    started: "&aRandomChunk dimulai."
+    already-started: "&eRandomChunk sudah berjalan."
+    stopped: "&cRandomChunk dihentikan."
+    already-stopped: "&eRandomChunk sudah berhenti."
+
+  reset:
+    started: "&eMereset data chunk..."
+    completed: "&aData chunk berhasil direset."
+
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7Berjalan: &f{running}"
+    speed: "&7Kecepatan: &b{speed}"
+    processed: "&7Chunk diproses: &f{processed}"
+    queued: "&7Dalam antrean: &f{queued}"
+    header-end: "&8&m--------------------------------"
+
+  general2:
+    reloaded: "&aKonfigurasi berhasil dimuat ulang."
+
+vi:
+  prefix: "&8[&bRandomChunk&8] "
+
+  general:
+    no-permission: "&cBạn không có quyền."
+    unknown-command: "&cSử dụng: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
+
+  event:
+    started: "&aRandomChunk đã bắt đầu."
+    already-started: "&eRandomChunk đang chạy."
+    stopped: "&cRandomChunk đã dừng."
+    already-stopped: "&eRandomChunk đã dừng."
+
+  reset:
+    started: "&eĐang đặt lại dữ liệu chunk..."
+    completed: "&aDữ liệu chunk đã được đặt lại."
+
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7Đang chạy: &f{running}"
+    speed: "&7Tốc độ: &b{speed}"
+    processed: "&7Chunk đã xử lý: &f{processed}"
+    queued: "&7Đang chờ: &f{queued}"
+    header-end: "&8&m--------------------------------"
+
+  general2:
+    reloaded: "&aĐã tải lại cấu hình."
+
+th:
+  prefix: "&8[&bRandomChunk&8] "
+
+  general:
+    no-permission: "&cคุณไม่มีสิทธิ์"
+    unknown-command: "&cใช้: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
+
+  event:
+    started: "&aเริ่ม RandomChunk แล้ว"
+    already-started: "&eRandomChunk กำลังทำงานอยู่"
+    stopped: "&cหยุด RandomChunk แล้ว"
+    already-stopped: "&eRandomChunk หยุดอยู่แล้ว"
+
+  reset:
+    started: "&eกำลังรีเซ็ตข้อมูล chunk..."
+    completed: "&aรีเซ็ตข้อมูล chunk แล้ว"
+
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7ทำงาน: &f{running}"
+    speed: "&7ความเร็ว: &b{speed}"
+    processed: "&7Chunk ที่ประมวลผล: &f{processed}"
+    queued: "&7คิว: &f{queued}"
+    header-end: "&8&m--------------------------------"
+
+  general2:
+    reloaded: "&aโหลดการตั้งค่าใหม่แล้ว"
+
+ru:
+  prefix: "&8[&bRandomChunk&8] "
+
+  general:
+    no-permission: "&cУ вас нет разрешения."
+    unknown-command: "&cИспользуйте: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
+
+  event:
+    started: "&aRandomChunk запущен."
+    already-started: "&eRandomChunk уже запущен."
+    stopped: "&cRandomChunk остановлен."
+    already-stopped: "&eRandomChunk уже остановлен."
+
+  reset:
+    started: "&eСброс данных чанков..."
+    completed: "&aДанные чанков сброшены."
+
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7Работает: &f{running}"
+    speed: "&7Скорость: &b{speed}"
+    processed: "&7Обработано чанков: &f{processed}"
+    queued: "&7В очереди: &f{queued}"
+    header-end: "&8&m--------------------------------"
+
+  general2:
+    reloaded: "&aКонфигурация перезагружена."
+
+de:
+  prefix: "&8[&bRandomChunk&8] "
+
+  general:
+    no-permission: "&cDu hast keine Berechtigung."
+    unknown-command: "&cVerwende: &f/randomchunk start&c, &fstop&c, &freset&c, &freload&c, &fstatus"
+
+  event:
+    started: "&aRandomChunk gestartet."
+    already-started: "&eRandomChunk läuft bereits."
+    stopped: "&cRandomChunk gestoppt."
+    already-stopped: "&eRandomChunk ist bereits gestoppt."
+
+  reset:
+    started: "&eChunk-Daten werden zurückgesetzt..."
+    completed: "&aChunk-Daten wurden zurückgesetzt."
+
+  status:
+    header: "&8&m----------&r &bRandomChunk &8&m----------"
+    running: "&7Läuft: &f{running}"
+    speed: "&7Geschwindigkeit: &b{speed}"
+    processed: "&7Verarbeitete Chunks: &f{processed}"
+    queued: "&7Warteschlange: &f{queued}"
+    header-end: "&8&m--------------------------------"
+
+  general2:
+    reloaded: "&aKonfiguration neu geladen."
