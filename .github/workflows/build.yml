@@ -5,10 +5,11 @@ on:
     branches:
       - main
       - master
-
   pull_request:
-
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -16,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 25
@@ -28,18 +29,31 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.1.0'
 
-      - name: Build
-        run: |
-          chmod +x gradlew
-          ./gradlew clean build --no-daemon
+      - name: Build RandomChunk
+        run: gradle clean build --no-daemon --stacktrace
 
-      - name: List build files
+      - name: Verify JAR
+        shell: bash
         run: |
+          set -e
+
           echo "=== Build output ==="
-          find build/libs -maxdepth 1 -type f -print
+          ls -lah build/libs/
 
-      - name: Upload JAR
+          JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' | head -n 1)"
+
+          if [ -z "$JAR" ]; then
+            echo "ERROR: RandomChunk JAR was not generated."
+            exit 1
+          fi
+
+          echo "JAR generated successfully:"
+          echo "$JAR"
+
+      - name: Upload RandomChunk JAR
         uses: actions/upload-artifact@v4
         with:
           name: RandomChunk-JAR
