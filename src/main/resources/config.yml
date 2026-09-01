@@ -4,35 +4,30 @@
 # Paper 26.2 / Java 25
 # ============================================================
 
-# Languages:
-# en = English
-# id = Indonesian
-# vi = Vietnamese
-# th = Thai
-# ru = Russian
-# de = German
-
+# Language used by the plugin messages.
+# Supported: en, id, vi, th, ru, de
 language: en
 
 settings:
 
-  # false = plugin tidak otomatis aktif setelah restart.
+  # Enable RandomChunk automatically when the server starts.
   enabled-on-start: false
 
-  # true = setiap chunk hanya diproses satu kali.
-  # /randomchunk reset untuk mengulang semua chunk.
+  # Process each chunk only once.
+  # Use /randomchunk reset to process chunks again.
   process-once: true
 
-  # Air tetap air.
+  # Keep air blocks unchanged.
   replace-air: false
 
-  # Bedrock ikut diganti.
+  # Replace bedrock.
   replace-bedrock: true
 
-  # false = replacement tanpa physics.
+  # Apply block physics when replacing blocks.
+  # false is recommended for better performance.
   apply-physics: false
 
-  # Jumlah chunk yang boleh diproses bersamaan.
+  # Maximum number of chunks processed at the same time.
   max-active-chunks: 1
 
 
@@ -40,41 +35,43 @@ settings:
 # SPEED
 # ============================================================
 #
+# Available presets:
+#
 # FAST
 # NORMAL
 # SLOW
 # CUSTOM
 #
-# DEFAULT = NORMAL
+# NORMAL is the default recommended setting.
 #
 # FAST:
-#   16384 block/tick
+# 16384 blocks per tick
 #
 # NORMAL:
-#   4096 block/tick
+# 4096 blocks per tick
 #
 # SLOW:
-#   512 block/tick
+# 512 blocks per tick
 #
 # CUSTOM:
-#   menggunakan blocks-per-tick
+# Uses the value from blocks-per-tick.
 #
 
 speed:
 
+  # Available: FAST, NORMAL, SLOW, CUSTOM
   preset: NORMAL
 
-  # Hanya digunakan jika preset = CUSTOM.
+  # Used only when preset is CUSTOM.
   blocks-per-tick: 4096
 
-  # Jika TPS turun, plugin otomatis menggunakan
-  # slow-mode-blocks-per-tick.
+  # Automatically reduce processing speed when TPS is low.
   adaptive-tps: true
 
-  # Batas TPS untuk mengaktifkan slow mode.
+  # Adaptive mode activates below this TPS.
   minimum-tps: 18.0
 
-  # Kecepatan ketika TPS rendah.
+  # Processing speed used while TPS is low.
   slow-mode-blocks-per-tick: 512
 
 
@@ -84,9 +81,9 @@ speed:
 
 worlds:
 
-  # [] = semua world.
+  # Empty list = all worlds.
   #
-  # Contoh:
+  # Example:
   #
   # enabled:
   #   - world
@@ -101,8 +98,9 @@ worlds:
 
 storage:
 
-  # Menyimpan chunk yang sudah selesai diproses.
+  # Save processed chunks so they remain processed after restart.
   persistent: true
 
-  # Simpan data setiap X chunk.
+  # Save processed chunk data every X completed chunks.
+  # 1 = safest option.
   save-every-chunks: 1
