@@ -1,0 +1,19 @@
+name: RandomChunk
+version: '1.0.0'
+main: com.kingbrezz.randomchunk.RandomChunkPlugin
+api-version: '26.2'
+author: KingBrezz
+description: Replace each newly entered chunk with one random Minecraft block while preserving terrain shape.
+
+commands:
+  randomchunk:
+    description: RandomChunk main command
+    usage: /randomchunk <start|stop|reset>
+    aliases:
+      - rc
+    permission: randomchunk.admin
+
+permissions:
+  randomchunk.admin:
+    description: Allows use of RandomChunk commands
+    default: op
