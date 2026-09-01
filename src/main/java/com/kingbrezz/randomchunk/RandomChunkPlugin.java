@@ -12,8 +12,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.server.PluginDisableEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -29,34 +30,34 @@ import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
-public final class RandomChunkPlugin extends JavaPlugin implements Listener, TabExecutor {
+public final class RandomChunkPlugin extends JavaPlugin
+        implements Listener, TabExecutor {
 
     private final Random random = new Random();
 
     private final Queue<ChunkTask> queue = new ArrayDeque<>();
     private final Set<String> queuedChunks = new HashSet<>();
     private final Map<UUID, String> lastChunkByPlayer = new HashMap<>();
-
     private final List<Material> randomMaterials = new ArrayList<>();
 
     private ProcessedChunks processedChunks;
     private Language language;
-
     private BukkitTask processingTask;
 
     private boolean running;
-    private int activeChunks;
 
+    private boolean processOnce;
     private boolean replaceAir;
     private boolean replaceBedrock;
     private boolean applyPhysics;
 
-    private int blocksPerTick;
-    private int slowModeBlocksPerTick;
     private int maxActiveChunks;
 
+    private SpeedPreset speedPreset;
+    private int customBlocksPerTick;
     private boolean adaptiveTps;
     private double minimumTps;
+    private int slowModeBlocksPerTick;
 
     @Override
     public void onEnable() {
@@ -68,23 +69,27 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         loadSettings();
         rebuildMaterialList();
 
-        getServer().getPluginManager().registerEvents(this, this);
+        Bukkit.getPluginManager().registerEvents(this, this);
 
         if (getCommand("randomchunk") != null) {
             getCommand("randomchunk").setExecutor(this);
             getCommand("randomchunk").setTabCompleter(this);
         }
 
-        running = getConfig().getBoolean("settings.enabled-on-start", false);
+        running = getConfig().getBoolean(
+                "settings.enabled-on-start",
+                false
+        );
 
         startProcessingTask();
 
+        getLogger().info("========================================");
         getLogger().info("RandomChunk enabled.");
+        getLogger().info("Version: " + getDescription().getVersion());
+        getLogger().info("Speed: " + speedPreset.name());
         getLogger().info("Random block pool: " + randomMaterials.size());
-
-        if (running) {
-            getLogger().info("RandomChunk event is running.");
-        }
+        getLogger().info("Running: " + running);
+        getLogger().info("========================================");
     }
 
     @Override
@@ -105,18 +110,12 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         getLogger().info("RandomChunk disabled.");
     }
 
-    @EventHandler
-    public void onPluginDisable(PluginDisableEvent event) {
-        if (event.getPlugin() != this) {
-            return;
-        }
-
-        if (processingTask != null) {
-            processingTask.cancel();
-        }
-    }
-
     private void loadSettings() {
+        processOnce = getConfig().getBoolean(
+                "settings.process-once",
+                true
+        );
+
         replaceAir = getConfig().getBoolean(
                 "settings.replace-air",
                 false
@@ -132,22 +131,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
                 false
         );
 
-        blocksPerTick = Math.max(
-                1,
-                getConfig().getInt(
-                        "settings.blocks-per-tick",
-                        2048
-                )
-        );
-
-        slowModeBlocksPerTick = Math.max(
-                1,
-                getConfig().getInt(
-                        "performance.slow-mode-blocks-per-tick",
-                        256
-                )
-        );
-
         maxActiveChunks = Math.max(
                 1,
                 getConfig().getInt(
@@ -156,14 +139,37 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
                 )
         );
 
+        String preset = getConfig().getString(
+                "speed.preset",
+                "NORMAL"
+        );
+
+        speedPreset = SpeedPreset.fromString(preset);
+
+        customBlocksPerTick = Math.max(
+                1,
+                getConfig().getInt(
+                        "speed.blocks-per-tick",
+                        4096
+                )
+        );
+
         adaptiveTps = getConfig().getBoolean(
-                "performance.adaptive-tps",
+                "speed.adaptive-tps",
                 true
         );
 
         minimumTps = getConfig().getDouble(
-                "performance.minimum-tps",
+                "speed.minimum-tps",
                 18.0
+        );
+
+        slowModeBlocksPerTick = Math.max(
+                1,
+                getConfig().getInt(
+                        "speed.slow-mode-blocks-per-tick",
+                        512
+                )
         );
     }
 
@@ -199,101 +205,77 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
     }
 
     private void processQueue() {
-        if (!running) {
+        if (!running || queue.isEmpty()) {
             return;
         }
 
-        if (queue.isEmpty()) {
-            return;
-        }
+        int active = 0;
 
-        int availableSlots = maxActiveChunks - activeChunks;
-
-        if (availableSlots <= 0) {
-            return;
-        }
-
-        while (availableSlots > 0 && !queue.isEmpty()) {
+        while (active < maxActiveChunks && !queue.isEmpty()) {
             ChunkTask task = queue.peek();
 
             if (task == null) {
                 return;
             }
 
-            if (!task.world.isChunkLoaded(task.chunkX, task.chunkZ)) {
+            if (!task.world.isChunkLoaded(
+                    task.chunkX,
+                    task.chunkZ
+            )) {
                 return;
             }
 
-            activeChunks++;
-
             int budget = getCurrentBlocksPerTick();
 
-            boolean complete = processBlocks(task, budget);
+            boolean complete = processBlocks(
+                    task,
+                    budget
+            );
 
-            if (complete) {
-                queue.poll();
+            active++;
 
-                queuedChunks.remove(task.key);
+            if (!complete) {
+                return;
+            }
 
-                activeChunks = Math.max(
-                        0,
-                        activeChunks - 1
-                );
+            queue.poll();
+            queuedChunks.remove(task.key);
 
+            if (processOnce) {
                 Chunk chunk = task.world.getChunkAt(
                         task.chunkX,
                         task.chunkZ
                 );
 
                 processedChunks.add(chunk);
-                processedChunks.save();
-
-                Map<String, String> placeholders = new HashMap<>();
-                placeholders.put(
-                        "chunk_x",
-                        Integer.toString(task.chunkX)
-                );
-                placeholders.put(
-                        "chunk_z",
-                        Integer.toString(task.chunkZ)
-                );
-                placeholders.put(
-                        "block",
-                        task.material.name()
-                );
-
-                getLogger().info(
-                        "Chunk " +
-                                task.chunkX +
-                                "," +
-                                task.chunkZ +
-                                " in " +
-                                task.world.getName() +
-                                " became " +
-                                task.material.name()
-                );
-            } else {
-                activeChunks = Math.max(
-                        0,
-                        activeChunks - 1
-                );
-
-                return;
             }
 
-            availableSlots--;
+            getLogger().info(
+                    "Chunk " +
+                            task.chunkX +
+                            "," +
+                            task.chunkZ +
+                            " in " +
+                            task.world.getName() +
+                            " became " +
+                            task.material.name()
+            );
+
+            processedChunks.save();
         }
     }
 
     private int getCurrentBlocksPerTick() {
+        int normalSpeed = getPresetBlocksPerTick();
+
         if (!adaptiveTps) {
-            return blocksPerTick;
+            return normalSpeed;
         }
 
         double[] tps = Bukkit.getTPS();
 
         if (tps.length == 0) {
-            return blocksPerTick;
+            return normalSpeed;
         }
 
         double currentTps = tps[0];
@@ -302,7 +284,16 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             return slowModeBlocksPerTick;
         }
 
-        return blocksPerTick;
+        return normalSpeed;
+    }
+
+    private int getPresetBlocksPerTick() {
+        return switch (speedPreset) {
+            case FAST -> 16384;
+            case NORMAL -> 4096;
+            case SLOW -> 512;
+            case CUSTOM -> customBlocksPerTick;
+        };
     }
 
     private boolean processBlocks(
@@ -311,7 +302,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
     ) {
         int processed = 0;
 
-        int minY = task.world.getMinHeight();
         int maxY = task.world.getMaxHeight();
 
         while (processed < budget) {
@@ -320,8 +310,11 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
                 return true;
             }
 
-            int worldX = task.chunkX * 16 + task.localX;
-            int worldZ = task.chunkZ * 16 + task.localZ;
+            int worldX =
+                    task.chunkX * 16 + task.localX;
+
+            int worldZ =
+                    task.chunkZ * 16 + task.localZ;
 
             Block block = task.world.getBlockAt(
                     worldX,
@@ -361,7 +354,10 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             return replaceAir;
         }
 
-        if (type == Material.BEDROCK && !replaceBedrock) {
+        if (
+                type == Material.BEDROCK
+                        && !replaceBedrock
+        ) {
             return false;
         }
 
@@ -369,14 +365,16 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
     }
 
     private boolean isWorldEnabled(World world) {
-        List<String> enabledWorlds =
-                getConfig().getStringList("worlds.enabled");
+        List<String> worlds =
+                getConfig().getStringList(
+                        "worlds.enabled"
+                );
 
-        if (enabledWorlds.isEmpty()) {
+        if (worlds.isEmpty()) {
             return true;
         }
 
-        return enabledWorlds.contains(world.getName());
+        return worlds.contains(world.getName());
     }
 
     private void handleChunkChange(
@@ -394,33 +392,34 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             return;
         }
 
-        String playerKey =
-                world.getUID() +
-                        ":" +
-                        chunkX +
-                        ":" +
-                        chunkZ;
-
-        String previous =
-                lastChunkByPlayer.put(
-                        player.getUniqueId(),
-                        playerKey
-                );
-
-        if (playerKey.equals(previous)) {
-            return;
-        }
-
-        Chunk chunk = world.getChunkAt(
+        String key = createKey(
+                world,
                 chunkX,
                 chunkZ
         );
 
-        if (processedChunks.contains(chunk)) {
+        String previous =
+                lastChunkByPlayer.put(
+                        player.getUniqueId(),
+                        key
+                );
+
+        if (key.equals(previous)) {
             return;
         }
 
-        enqueueChunk(world, chunkX, chunkZ);
+        if (
+                processOnce
+                        && processedChunks.containsKey(key)
+        ) {
+            return;
+        }
+
+        enqueueChunk(
+                world,
+                chunkX,
+                chunkZ
+        );
     }
 
     private void enqueueChunk(
@@ -428,23 +427,20 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             int chunkX,
             int chunkZ
     ) {
-        String key =
-                world.getUID() +
-                        ":" +
-                        chunkX +
-                        ":" +
-                        chunkZ;
+        String key = createKey(
+                world,
+                chunkX,
+                chunkZ
+        );
 
         if (queuedChunks.contains(key)) {
             return;
         }
 
-        Chunk chunk = world.getChunkAt(
-                chunkX,
-                chunkZ
-        );
-
-        if (processedChunks.contains(chunk)) {
+        if (
+                processOnce
+                        && processedChunks.containsKey(key)
+        ) {
             return;
         }
 
@@ -478,30 +474,67 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         queuedChunks.add(key);
     }
 
+    private String createKey(
+            World world,
+            int chunkX,
+            int chunkZ
+    ) {
+        return world.getUID()
+                + ":"
+                + chunkX
+                + ":"
+                + chunkZ;
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        if (!running) {
+            return;
+        }
+
+        Player player = event.getPlayer();
+
+        Bukkit.getScheduler().runTask(
+                this,
+                () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+
+                    int chunkX =
+                            player.getLocation()
+                                    .getBlockX() >> 4;
+
+                    int chunkZ =
+                            player.getLocation()
+                                    .getBlockZ() >> 4;
+
+                    handleChunkChange(
+                            player,
+                            chunkX,
+                            chunkZ
+                    );
+                }
+        );
+    }
+
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         if (!running) {
             return;
         }
 
-        if (event.getTo() == null) {
-            return;
-        }
-
-        if (event.getFrom().getWorld() == null) {
-            return;
-        }
-
-        if (event.getTo().getWorld() == null) {
+        if (
+                event.getTo() == null
+                        || event.getFrom().getWorld() == null
+                        || event.getTo().getWorld() == null
+        ) {
             return;
         }
 
         if (
-                event.getFrom().getBlockX() ==
-                        event.getTo().getBlockX()
-                        &&
-                        event.getFrom().getBlockZ() ==
-                                event.getTo().getBlockZ()
+                event.getFrom().getWorld()
+                        != event.getTo().getWorld()
         ) {
             return;
         }
@@ -520,8 +553,7 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
 
         if (
                 oldChunkX == newChunkX
-                        &&
-                        oldChunkZ == newChunkZ
+                        && oldChunkZ == newChunkZ
         ) {
             return;
         }
@@ -534,7 +566,9 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
     }
 
     @EventHandler
-    public void onWorldChange(PlayerChangedWorldEvent event) {
+    public void onWorldChange(
+            PlayerChangedWorldEvent event
+    ) {
         if (!running) {
             return;
         }
@@ -560,6 +594,15 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         );
     }
 
+    @EventHandler
+    public void onPlayerQuit(
+            PlayerQuitEvent event
+    ) {
+        lastChunkByPlayer.remove(
+                event.getPlayer().getUniqueId()
+        );
+    }
+
     private void startEvent(CommandSender sender) {
         if (running) {
             sender.sendMessage(
@@ -571,13 +614,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         }
 
         running = true;
-
-        getConfig().set(
-                "settings.enabled-on-start",
-                true
-        );
-
-        saveConfig();
 
         sender.sendMessage(
                 language.get(
@@ -598,13 +634,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
 
         running = false;
 
-        getConfig().set(
-                "settings.enabled-on-start",
-                false
-        );
-
-        saveConfig();
-
         sender.sendMessage(
                 language.get(
                         "event.stopped"
@@ -616,8 +645,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         queue.clear();
         queuedChunks.clear();
         lastChunkByPlayer.clear();
-
-        activeChunks = 0;
 
         sender.sendMessage(
                 language.get(
@@ -638,9 +665,7 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
         reloadConfig();
 
         loadSettings();
-
         rebuildMaterialList();
-
         language.reload();
 
         sender.sendMessage(
@@ -668,6 +693,15 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
 
         sender.sendMessage(
                 language.get(
+                        "status.speed"
+                ).replace(
+                        "{speed}",
+                        speedPreset.name()
+                )
+        );
+
+        sender.sendMessage(
+                language.get(
                         "status.processed"
                 ).replace(
                         "{processed}",
@@ -684,17 +718,6 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
                         "{queued}",
                         Integer.toString(
                                 queue.size()
-                        )
-                )
-        );
-
-        sender.sendMessage(
-                language.get(
-                        "status.active"
-                ).replace(
-                        "{active}",
-                        Integer.toString(
-                                activeChunks
                         )
                 )
         );
@@ -731,38 +754,23 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             return true;
         }
 
-        String subCommand =
-                args[0].toLowerCase();
+        switch (args[0].toLowerCase()) {
+            case "start" -> startEvent(sender);
 
-        switch (subCommand) {
+            case "stop" -> stopEvent(sender);
 
-            case "start":
-                startEvent(sender);
-                break;
+            case "reset" -> resetEvent(sender);
 
-            case "stop":
-                stopEvent(sender);
-                break;
+            case "reload" -> reloadPlugin(sender);
 
-            case "reset":
-                resetEvent(sender);
-                break;
+            case "status" -> sendStatus(sender);
 
-            case "reload":
-                reloadPlugin(sender);
-                break;
-
-            case "status":
-                sendStatus(sender);
-                break;
-
-            default:
-                sender.sendMessage(
-                        language.get(
-                                "general.unknown-command"
-                        )
-                );
-                break;
+            default ->
+                    sender.sendMessage(
+                            language.get(
+                                    "general.unknown-command"
+                            )
+                    );
         }
 
         return true;
@@ -775,32 +783,52 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             String alias,
             String[] args
     ) {
-        if (args.length == 1) {
-            List<String> options =
-                    List.of(
-                            "start",
-                            "stop",
-                            "reset",
-                            "reload",
-                            "status"
-                    );
-
-            String input =
-                    args[0].toLowerCase();
-
-            List<String> result =
-                    new ArrayList<>();
-
-            for (String option : options) {
-                if (option.startsWith(input)) {
-                    result.add(option);
-                }
-            }
-
-            return result;
+        if (args.length != 1) {
+            return Collections.emptyList();
         }
 
-        return Collections.emptyList();
+        List<String> options = List.of(
+                "start",
+                "stop",
+                "reset",
+                "reload",
+                "status"
+        );
+
+        String input =
+                args[0].toLowerCase();
+
+        List<String> result =
+                new ArrayList<>();
+
+        for (String option : options) {
+            if (option.startsWith(input)) {
+                result.add(option);
+            }
+        }
+
+        return result;
+    }
+
+    private enum SpeedPreset {
+        FAST,
+        NORMAL,
+        SLOW,
+        CUSTOM;
+
+        private static SpeedPreset fromString(
+                String value
+        ) {
+            try {
+                return value == null
+                        ? NORMAL
+                        : valueOf(
+                                value.toUpperCase()
+                        );
+            } catch (IllegalArgumentException e) {
+                return NORMAL;
+            }
+        }
     }
 
     private static final class ChunkTask {
@@ -829,11 +857,11 @@ public final class RandomChunkPlugin extends JavaPlugin implements Listener, Tab
             this.y = minY;
 
             this.key =
-                    world.getUID() +
-                            ":" +
-                            chunkX +
-                            ":" +
-                            chunkZ;
+                    world.getUID()
+                            + ":"
+                            + chunkX
+                            + ":"
+                            + chunkZ;
         }
     }
-            }
+                }
