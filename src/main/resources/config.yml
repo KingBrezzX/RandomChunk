@@ -1,79 +1,108 @@
 # ============================================================
 # RandomChunk
 # Author: KingBrezz
+# Paper 26.2 / Java 25
 # ============================================================
+
+# Languages:
+# en = English
+# id = Indonesian
+# vi = Vietnamese
+# th = Thai
+# ru = Russian
+# de = German
 
 language: en
 
 settings:
 
-  # RandomChunk tidak langsung aktif ketika server menyala.
+  # false = plugin tidak otomatis aktif setelah restart.
   enabled-on-start: false
 
-  # Setiap chunk hanya diproses satu kali.
-  # Gunakan /randomchunk reset untuk mengulang event.
+  # true = setiap chunk hanya diproses satu kali.
+  # /randomchunk reset untuk mengulang semua chunk.
   process-once: true
 
-  # AIR TETAP AIR.
-  # Ini membuat bentuk terrain, cave, ravine, dan lubang tetap terlihat.
+  # Air tetap air.
   replace-air: false
 
-  # BEDROCK ikut diganti.
+  # Bedrock ikut diganti.
   replace-bedrock: true
 
-  # Jangan jalankan physics ketika block diganti.
+  # false = replacement tanpa physics.
   apply-physics: false
 
-  # 1 chunk menggunakan SATU material random.
-  # Material dipilih otomatis dari seluruh block Minecraft.
-  random-material-source: ALL_BLOCKS
-
-  # Jumlah block yang diproses setiap tick.
-  # Naikkan jika server kuat, turunkan jika TPS turun.
-  blocks-per-tick: 2048
-
-  # Hanya satu chunk yang diproses bersamaan.
+  # Jumlah chunk yang boleh diproses bersamaan.
   max-active-chunks: 1
 
 
-performance:
+# ============================================================
+# SPEED
+# ============================================================
+#
+# FAST
+# NORMAL
+# SLOW
+# CUSTOM
+#
+# DEFAULT = NORMAL
+#
+# FAST:
+#   16384 block/tick
+#
+# NORMAL:
+#   4096 block/tick
+#
+# SLOW:
+#   512 block/tick
+#
+# CUSTOM:
+#   menggunakan blocks-per-tick
+#
 
-  # Memperlambat processing jika TPS server turun.
+speed:
+
+  preset: NORMAL
+
+  # Hanya digunakan jika preset = CUSTOM.
+  blocks-per-tick: 4096
+
+  # Jika TPS turun, plugin otomatis menggunakan
+  # slow-mode-blocks-per-tick.
   adaptive-tps: true
 
-  # Di bawah TPS ini plugin menggunakan slow-mode.
+  # Batas TPS untuk mengaktifkan slow mode.
   minimum-tps: 18.0
 
-  # Kecepatan processing ketika server sedang sibuk.
-  slow-mode-blocks-per-tick: 256
+  # Kecepatan ketika TPS rendah.
+  slow-mode-blocks-per-tick: 512
 
+
+# ============================================================
+# WORLDS
+# ============================================================
 
 worlds:
 
-  # Kosong = semua world.
+  # [] = semua world.
   #
-  # Contoh jika ingin membatasi:
+  # Contoh:
+  #
   # enabled:
   #   - world
   #   - world_nether
-  #   - world_the_end
   #
   enabled: []
 
 
+# ============================================================
+# STORAGE
+# ============================================================
+
 storage:
 
-  # Menyimpan chunk yang sudah pernah diproses.
-  # Setelah restart server chunk tidak di-random ulang.
+  # Menyimpan chunk yang sudah selesai diproses.
   persistent: true
 
-
-random-material:
-
-  # ALL_BLOCKS:
-  # Plugin otomatis mengambil semua Material yang merupakan block
-  # dan tersedia pada server Minecraft tersebut.
-  #
-  # Air tidak dipilih sebagai material random.
-  # Block baru Minecraft otomatis ikut tanpa edit config.
-  source: ALL_BLOCKS
+  # Simpan data setiap X chunk.
+  save-every-chunks: 1
