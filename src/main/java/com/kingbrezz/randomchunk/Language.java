@@ -10,6 +10,7 @@ import java.util.Map;
 public final class Language {
 
     private final RandomChunkPlugin plugin;
+
     private FileConfiguration messages;
 
     public Language(RandomChunkPlugin plugin) {
@@ -18,26 +19,62 @@ public final class Language {
     }
 
     public void reload() {
-        File file = new File(plugin.getDataFolder(), "messages.yml");
+        File file = new File(
+                plugin.getDataFolder(),
+                "messages.yml"
+        );
 
         if (!file.exists()) {
-            plugin.saveResource("messages.yml", false);
+            plugin.saveResource(
+                    "messages.yml",
+                    false
+            );
         }
 
-        messages = YamlConfiguration.loadConfiguration(file);
+        messages =
+                YamlConfiguration.loadConfiguration(
+                        file
+                );
     }
 
     public String get(String path) {
-        String prefix = messages.getString("prefix", "");
-        String message = messages.getString(path, path);
+        String language =
+                plugin.getConfig().getString(
+                        "language",
+                        "en"
+                );
+
+        String prefix =
+                messages.getString(
+                        language + ".prefix",
+                        messages.getString(
+                                "en.prefix",
+                                ""
+                        )
+                );
+
+        String message =
+                messages.getString(
+                        language + "." + path,
+                        messages.getString(
+                                "en." + path,
+                                path
+                        )
+                );
 
         return color(prefix + message);
     }
 
-    public String get(String path, Map<String, String> placeholders) {
+    public String get(
+            String path,
+            Map<String, String> placeholders
+    ) {
         String message = get(path);
 
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+        for (
+                Map.Entry<String, String> entry
+                        : placeholders.entrySet()
+        ) {
             message = message.replace(
                     "{" + entry.getKey() + "}",
                     entry.getValue()
@@ -47,7 +84,10 @@ public final class Language {
         return message;
     }
 
-    public String color(String text) {
-        return ChatColor.translateAlternateColorCodes('&', text);
+    private String color(String text) {
+        return ChatColor.translateAlternateColorCodes(
+                '&',
+                text
+        );
     }
-          }
+}
